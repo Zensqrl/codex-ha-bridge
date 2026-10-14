@@ -2,17 +2,17 @@ import mqtt from "mqtt";
 import { BridgeError } from "./errors.js";
 
 const SENSOR_DEFS = [
-  ["primary_used_percent", "Codex 5h Used", "%", "mdi:timer-sand"],
-  ["primary_remaining_percent", "Codex 5h Remaining", "%", "mdi:timer-outline"],
-  ["primary_reset_time", "Codex 5h Reset", null, "mdi:clock-outline"],
-  ["secondary_used_percent", "Codex Weekly Used", "%", "mdi:calendar-week"],
+  ["primary_used_percent", "Codex Primary Used", "%", "mdi:timer-sand"],
+  ["primary_remaining_percent", "Codex Primary Remaining", "%", "mdi:timer-outline"],
+  ["primary_reset_time", "Codex Primary Reset", null, "mdi:clock-outline"],
+  ["secondary_used_percent", "Codex Secondary Used", "%", "mdi:calendar-week"],
   [
     "secondary_remaining_percent",
-    "Codex Weekly Remaining",
+    "Codex Secondary Remaining",
     "%",
     "mdi:calendar-check",
   ],
-  ["secondary_reset_time", "Codex Weekly Reset", null, "mdi:calendar-clock"],
+  ["secondary_reset_time", "Codex Secondary Reset", null, "mdi:calendar-clock"],
   ["credits_balance", "Codex Credits", "credits", "mdi:cash"],
   ["plan", "Codex Plan", null, "mdi:account-badge"],
   ["rate_limit_reached_type", "Codex Limit Status", null, "mdi:alert-circle"],
@@ -65,7 +65,7 @@ export async function publishDiscovery(client, config) {
       unique_id: `${config.device.id}_${key}`,
       state_topic: stateTopic(config),
       availability_topic: availabilityTopic(config),
-      value_template: `{{ value_json.${key} if value_json.${key} is not none else 'unknown' }}`,
+      value_template: `{{ value_json.${key} if value_json.${key} is not none else ${unit ? "none" : "'unknown'"} }}`,
       expire_after: config.pollSeconds * 3,
       json_attributes_topic: stateTopic(config),
       device,

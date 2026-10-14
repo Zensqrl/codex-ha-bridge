@@ -1,6 +1,6 @@
 {
   "name": "codex-ha-bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Publish Codex usage limits to Home Assistant over MQTT.",
   "type": "module",
   "private": true,

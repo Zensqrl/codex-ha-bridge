@@ -44,7 +44,8 @@ test("fresh state precedes online, discovery identities preserved, shutdown fini
   const discovery = messages.filter(m => m.topic.endsWith("/config"));
   assert.equal(discovery.length, 9);
   assert.equal(JSON.parse(discovery[0].body).unique_id, "codex_usage_primary_used_percent");
-  assert.match(JSON.parse(discovery[0].body).value_template, /unknown/);
+  assert.match(JSON.parse(discovery[0].body).value_template, /else none/);
+  assert.match(JSON.parse(discovery[2].body).value_template, /unknown/);
   await b.stop();
   assert.equal(messages.at(-1).body, "offline");
 });

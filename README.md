@@ -86,17 +86,19 @@ The bridge pins the app-server's ChatGPT backend origin, uses stdio with no netw
 
 ## Sensors and failure behavior
 
+Primary and secondary sensor names refer to the windows supplied by Codex; their durations can vary by account. Check `primary_window_minutes` and `secondary_window_minutes` in the sensor attributes. Missing numeric values render as Home Assistant `unknown`, using its required null representation. Existing discovery unique IDs and entity IDs are preserved.
+
 | Sensor | Payload field |
 | --- | --- |
-| Codex 5h Used / Remaining | `primary_used_percent` / `primary_remaining_percent` |
-| Codex 5h Reset | `primary_reset_time` |
-| Codex Weekly Used / Remaining | `secondary_used_percent` / `secondary_remaining_percent` |
-| Codex Weekly Reset | `secondary_reset_time` |
+| Codex Primary Used / Remaining | `primary_used_percent` / `primary_remaining_percent` |
+| Codex Primary Reset | `primary_reset_time` |
+| Codex Secondary Used / Remaining | `secondary_used_percent` / `secondary_remaining_percent` |
+| Codex Secondary Reset | `secondary_reset_time` |
 | Codex Credits | `credits_balance` |
 | Codex Plan | `plan` |
 | Codex Limit Status | `rate_limit_reached_type` |
 
-The original labels are retained for compatibility; actual window lengths are reported in `primary_window_minutes` and `secondary_window_minutes`. The `codex` bucket is selected explicitly when multiple limit buckets exist. Missing quota/credit values remain null and render unknown. Missing/unrecognized limit status stays `unknown`; only an explicit no-limit status with usable quota data produces `OK`. Account emails, IDs, credentials and raw responses are excluded from MQTT payloads.
+Discovery identifiers are retained for compatibility; actual window lengths are reported in `primary_window_minutes` and `secondary_window_minutes`. The `codex` bucket is selected explicitly when multiple limit buckets exist. Missing quota/credit values remain null and render unknown. Missing/unrecognized limit status stays `unknown`; only an explicit no-limit status with usable quota data produces `OK`. Account emails, IDs, credentials and raw responses are excluded from MQTT payloads.
 
 Discovery, state and availability are retained and use QoS 1 acknowledgements. On each connection the bridge first publishes `offline`, then discovery and fresh state, then `online`. Errors mark it offline. A retained last will marks unexpected disconnections offline after broker detection; sensors also expire after three polling intervals. Broker failure itself may delay delivery until it recovers.
 
