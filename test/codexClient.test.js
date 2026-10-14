@@ -85,6 +85,7 @@ test("missing login and unsafe auth-file permissions fail safely", async t => {
   f.client.close();
   const g = fixture(t, respond);
   fs.writeFileSync(path.join(g.home, "auth.json"), "dummy", { mode: 0o644 });
+  fs.chmodSync(path.join(g.home, "auth.json"), 0o644); // Independent of the deployment user's umask.
   if (process.platform !== "win32") await assert.rejects(g.client.readUsage(), { code: "CODEX_HOME_UNSAFE" });
 });
 

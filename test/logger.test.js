@@ -49,6 +49,7 @@ test("rotation tightens permissions on legacy logs before archiving them", t => 
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const file = path.join(root, "bridge.log");
   fs.writeFileSync(file, "old log".repeat(100), { mode: 0o644 });
+  fs.chmodSync(file, 0o644); // Exercise legacy permissions even under umask 0077.
   createLogger({ file, maxBytes: 100 }).info("starting");
   assert.equal(fs.statSync(`${file}.1`).mode & 0o777, 0o600);
   assert.equal(fs.statSync(root).mode & 0o777, 0o700);
