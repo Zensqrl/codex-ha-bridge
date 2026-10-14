@@ -1,185 +1,131 @@
 # Codex Home Assistant MQTT Bridge
 
-Publish OpenAI Codex usage limits to Home Assistant over MQTT.
+Publish Codex usage limits to Home Assistant through MQTT Discovery. The bridge keeps the original sensor identifiers and topics while using a dedicated Codex login and verified MQTT TLS.
 
-**Codex Home Assistant MQTT Bridge** reads the same Codex usage information used by the Codex client, normalizes it, and publishes Home Assistant MQTT Discovery entities for the 5-hour and weekly usage windows.
-
-It is designed to be lightweight: there are no npm package dependencies, and the included Windows helper scripts can run the bridge silently in the background at sign-in.
-
----
-
-## Features
-
-- Publishes Codex usage to Home Assistant via MQTT.
-- Creates Home Assistant sensors automatically with MQTT Discovery.
-- Tracks 5-hour usage and remaining percentage.
-- Tracks weekly usage and remaining percentage.
-- Publishes retained state and availability topics for reliable Home Assistant restarts.
-- Publishes reset times:
-  - `Codex 5h Reset`: `16:49`
-  - `Codex Weekly Reset`: `12/05 - 09:01`
-- Publishes plan, credits, and limit status.
-- Runs without npm dependencies.
-- Includes Windows startup helpers that run silently in the background.
-
----
-
-## Screenshots
-
-Codex usage shown on a small Home Assistant dashboard display:
-
-<img src="docs/images/pic-1.jpg" alt="Codex usage shown on a small Home Assistant dashboard display" width="720">
-
-Home Assistant MQTT device and sensor entities:
-
-<img src="docs/images/pic-2.png" alt="Codex usage sensors in Home Assistant" width="640">
-
----
-
-## Home Assistant entities
-
-The bridge publishes these sensors:
-
-| Sensor | Example |
-| --- | --- |
-| `Codex 5h Used` | `49%` |
-| `Codex 5h Remaining` | `51%` |
-| `Codex 5h Reset` | `16:49` |
-| `Codex Weekly Used` | `8%` |
-| `Codex Weekly Remaining` | `92%` |
-| `Codex Weekly Reset` | `12/05 - 09:01` |
-| `Codex Credits` | `0 credits` |
-| `Codex Plan` | `plus` |
-| `Codex Limit Status` | `OK` |
-
-All sensor values come from the retained JSON state payload on `codex/usage/state`, with bridge availability published on `codex/usage/availability`.
-
----
-
-## How it works
-
-1. The bridge reads Codex authentication data from your local Codex configuration directory, or from an optional access token fallback.
-2. It requests Codex usage information from the Codex backend usage endpoint.
-3. It flattens the response into simple values suitable for MQTT state payloads.
-4. It publishes MQTT Discovery configs so Home Assistant creates the sensors automatically.
-5. It periodically republishes the current usage state and availability.
-
-Default MQTT topics:
-
-```text
-homeassistant/sensor/codex_usage/...
-codex/usage/state
-codex/usage/availability
-```
-
----
+![Codex usage display](docs/images/pic-1.jpg)
 
 ## Requirements
 
-- Windows, macOS, or Linux with Node.js 20 or newer.
-- Home Assistant with MQTT enabled.
-- A working MQTT broker, such as the Mosquitto add-on.
-- A valid Codex login on the machine running the bridge.
+- Node.js 22 or newer; CI targets Node 22 and 24.
+- A native Codex CLI executable supporting `codex app-server` and `account/rateLimits/read`.
+- Home Assistant MQTT integration and an MQTT broker with TLS enabled.
+- A dedicated MQTT user and a **separate ChatGPT login for this bridge**.
 
-The Windows helper scripts can also use the Node.js runtime bundled with the Codex desktop app when it is available.
+The app-server schema was checked against Codex CLI **0.132.0**. Its command remains experimental. Later versions may change methods/response fields; run the checks before upgrading. Authenticated live operation must be verified for your account. API-key-only authentication does not supply the required ChatGPT quota data.
 
----
+## Secure setup
 
-## Quick start on Windows
+1. Install the native Codex CLI through the official distribution and Node.js through a trusted source. On Windows, set `CODEX_EXECUTABLE` to the native `codex.exe` path if it is not on PATH; npm `.cmd`/`.bat` shims are deliberately unsupported.
+2. Establish a separate login. Do **not** copy tokens or `auth.json` from your desktop Codex directory. On macOS/Linux:
 
-1. Copy `.env.example` to `.env`.
-2. Edit `.env` with your MQTT settings.
-3. Double-click `start.bat` to test the bridge.
-4. Double-click `install-startup-task.bat` to run it silently when you sign in to Windows.
+   ```sh
+   mkdir -m 700 "$HOME/.codex-ha-bridge"
+   CODEX_HOME="$HOME/.codex-ha-bridge" codex -c 'cli_auth_credentials_store="file"' login
+   chmod 600 "$HOME/.codex-ha-bridge/auth.json"
+   ```
 
-Example `.env`:
+   On Windows, create a private directory accessible only to your Windows account. For the login command in a separate PowerShell session:
 
-```env
-MQTT_URL=mqtt://192.168.1.50:1883
-MQTT_USERNAME=ha_demo_user
-MQTT_PASSWORD=your-password
-POLL_SECONDS=60
-```
+   ```powershell
+   $env:CODEX_HOME = Join-Path $env:USERPROFILE ".codex-ha-bridge"
+   New-Item -ItemType Directory -Force $env:CODEX_HOME | Out-Null
+   codex -c 'cli_auth_credentials_store="file"' login
+   ```
 
-Do not commit your `.env` file. It contains your MQTT password and may contain Codex-related credentials.
+   Close that setup session afterward. Secure the directory using Windows ACLs. Credentials are stored in a dedicated file by Codex, which owns renewal; the bridge never parses that file or refreshes tokens itself.
+3. Configure the broker's TLS listener and a user with write permission only on the chosen topics. For the default identifiers, the intended Mosquitto ACL is:
 
----
+   ```text
+   user codex_bridge
+   topic write codex/usage/state
+   topic write codex/usage/availability
+   topic write homeassistant/sensor/codex_usage/+/config
+   ```
 
-## Manual start
+   The Home Assistant MQTT user needs read access to these topics. Actual ACL enforcement must be tested against your broker; adding this file alone does not enable ACLs. No command subscriptions are required.
+4. In this repository, run `npm ci --ignore-scripts`, copy `.env.example` to `.env`, and enter the broker settings. Use the broker DNS name appearing in its certificate. Supply `MQTT_CA_FILE` for a private CA instead of disabling verification. Keep `.env` private (`chmod 600 .env` on macOS/Linux; restrict its Windows ACL).
+5. Run `npm start` in the foreground. Confirm fresh values in Home Assistant, certificate verification and topic restrictions before enabling startup persistence.
 
-If Node.js is installed and available in your terminal:
-
-```powershell
-node src/index.js
-```
-
-Or through npm:
-
-```powershell
-npm start
-```
-
-If you are using the Windows helper:
-
-```powershell
-.\run.ps1
-```
-
----
-
-## Silent startup on Windows
-
-To create a Windows startup shortcut:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install-startup-task.ps1
-```
-
-Or double-click:
-
-```text
-install-startup-task.bat
-```
-
-This creates a shortcut in the user's Windows Startup folder and starts the bridge immediately. It does not keep a terminal window open.
-
-To remove the startup shortcut:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall-startup-task.ps1
-```
-
-When installed as a silent Windows startup app, logs are written to:
-
-```text
-logs/bridge.log
-```
-
----
+Never run the bridge as administrator/root. Treat the repository, native executable, CA files and dedicated Codex home as trusted local inputs. Keep the dedicated auth file out of this repository, backups shared with others, logs and support tickets.
 
 ## Configuration
 
-| Variable | Default | Description |
+Environment variables override `.env`. `.env` does not mutate the process environment or pass arbitrary variables to Codex.
+
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `MQTT_URL` | `mqtt://homeassistant.local:1883` | MQTT broker URL. The built-in MQTT client supports `mqtt://`. |
-| `MQTT_USERNAME` | empty | MQTT username. |
-| `MQTT_PASSWORD` | empty | MQTT password. |
-| `CODEX_HOME` | `~/.codex` | Codex config/auth directory. |
-| `CODEX_ACCESS_TOKEN` | empty | Optional bearer token fallback. |
-| `CHATGPT_ACCOUNT_ID` | empty | Optional account ID override when needed by the Codex backend request. |
-| `CODEX_BACKEND_URL` | `https://chatgpt.com/backend-api/wham/usage` | Optional backend usage endpoint override. |
-| `CODEX_REFRESH_TOKEN_URL` | `https://auth.openai.com/oauth/token` | Optional token refresh endpoint override. |
-| `POLL_SECONDS` | `60` | How often to publish usage updates. |
-| `MQTT_BASE_TOPIC` | `codex/usage` | MQTT state/availability topic prefix. |
-| `HA_DISCOVERY_PREFIX` | `homeassistant` | Home Assistant MQTT discovery prefix. |
-| `DEVICE_ID` | `codex_usage` | Home Assistant device identifier. |
-| `DEVICE_NAME` | `Codex Usage` | Home Assistant device name. |
+| `MQTT_URL` | `mqtts://homeassistant.local:8883` | Broker endpoint; URL credentials, query strings and non-root paths are rejected. |
+| `MQTT_USERNAME`, `MQTT_PASSWORD` | empty | Dedicated broker credentials. |
+| `MQTT_CA_FILE` | empty | Optional private CA PEM; path relative to the repository or absolute. |
+| `MQTT_ALLOW_LOOPBACK_PLAINTEXT` | `false` | Explicitly permit `mqtt://localhost`, `127.0.0.1` or `[::1]` for a separately encrypted tunnel. Never enables remote plaintext. |
+| `CODEX_BRIDGE_HOME` | `~/.codex-ha-bridge` | Absolute dedicated login directory; desktop home and overlapping/symlink aliases are refused. |
+| `CODEX_EXECUTABLE` | `codex` on PATH | Native executable; a custom path must be absolute. |
+| `CODEX_TIMEOUT_SECONDS` | `20` | App-server request deadline, 1–120 seconds. |
+| `MQTT_TIMEOUT_SECONDS` | `10` | Connection/publish deadline, 1–60 seconds. |
+| `MQTT_KEEPALIVE_SECONDS` | `30` | MQTT heartbeat, 5–120 seconds. |
+| `SHUTDOWN_SECONDS` | `5` | Graceful MQTT shutdown budget, 1–30 seconds. |
+| `POLL_SECONDS` | `60` | Poll interval after each cycle, 10–3600 seconds. |
+| `MQTT_BASE_TOPIC` | `codex/usage` | State/availability prefix. |
+| `HA_DISCOVERY_PREFIX` | `homeassistant` | Discovery prefix. |
+| `DEVICE_ID` | `codex_usage` | Device identifier; use a different ID and base topic for additional instances. |
+| `DEVICE_NAME` | `Codex Usage` | Device display name. |
+| `BRIDGE_LOG_TO_FILE` | `false` | Write sanitized logs to `logs/bridge.log`, rotated at 5 MiB with three backups. |
 
----
+Topic prefixes accept slash-separated letters, digits, underscores and hyphens. IDs accept these characters without slashes. Invalid numeric/Boolean settings fail instead of silently using defaults. TLS verification cannot be disabled; `NODE_TLS_REJECT_UNAUTHORIZED=0`, `DEBUG` and `NODE_DEBUG` are refused. Remove debug environment variables before starting, since third-party diagnostic output can expose protocol data.
 
-## Example Home Assistant dashboard cards
+## Upgrade from 0.1
 
-5-hour usage gauge:
+- Stop the old instance before switching; keep old credentials out of the new configuration.
+- Replace `mqtt://` with verified `mqtts://`, or an explicitly enabled loopback endpoint inside an encrypted tunnel.
+- Replace the old `CODEX_HOME` bridge setting with `CODEX_BRIDGE_HOME` and perform the separate login described above.
+- Remove `CODEX_ACCESS_TOKEN`, `CHATGPT_ACCOUNT_ID`, `CODEX_BACKEND_URL` and `CODEX_REFRESH_TOKEN_URL`; nonempty legacy values cause startup to fail. There is no automatic fallback to shared tokens or direct backend HTTP.
+- Install locked dependencies with `npm ci --ignore-scripts`. The project now uses pinned MQTT.js; the zero-dependency claim no longer applies.
+- Discovery unique IDs and default topics are unchanged. No sensor deletion/recreation should be necessary. Reset display times use the host timezone.
+
+The bridge pins the app-server's ChatGPT backend origin, uses stdio with no network listener, and issues only `initialize`, `account/read` and `account/rateLimits/read` requests. It does not create Codex threads/turns, provide tools or request inference. Only a small explicit environment allowlist reaches the child; MQTT secrets, OpenAI token overrides and Node execution/debug overrides are excluded.
+
+## Sensors and failure behavior
+
+| Sensor | Payload field |
+| --- | --- |
+| Codex 5h Used / Remaining | `primary_used_percent` / `primary_remaining_percent` |
+| Codex 5h Reset | `primary_reset_time` |
+| Codex Weekly Used / Remaining | `secondary_used_percent` / `secondary_remaining_percent` |
+| Codex Weekly Reset | `secondary_reset_time` |
+| Codex Credits | `credits_balance` |
+| Codex Plan | `plan` |
+| Codex Limit Status | `rate_limit_reached_type` |
+
+The original labels are retained for compatibility; actual window lengths are reported in `primary_window_minutes` and `secondary_window_minutes`. The `codex` bucket is selected explicitly when multiple limit buckets exist. Missing quota/credit values remain null and render unknown. Missing/unrecognized limit status stays `unknown`; only an explicit no-limit status with usable quota data produces `OK`. Account emails, IDs, credentials and raw responses are excluded from MQTT payloads.
+
+Discovery, state and availability are retained and use QoS 1 acknowledgements. On each connection the bridge first publishes `offline`, then discovery and fresh state, then `online`. Errors mark it offline. A retained last will marks unexpected disconnections offline after broker detection; sensors also expire after three polling intervals. Broker failure itself may delay delivery until it recovers.
+
+Only one poll runs at a time. Disconnected publishes fail immediately; timed-out connections and their queued messages are discarded. Reconnect attempts use capped exponential backoff with jitter, and each new connection fetches fresh state. Stalled Codex requests terminate their local child, allowing a later attempt to restart it. Foreground Ctrl+C/SIGTERM closes the child and attempts an offline publish within the shutdown budget.
+
+Errors are fixed safe codes/messages, without raw response bodies, stderr, exception text or secrets. This intentionally limits diagnostic detail. Private CA and certificate errors are reported as `MQTT_FAILED`; login/CLI issues use `CODEX_AUTH_REQUIRED`, `CODEX_UNAVAILABLE`, `CODEX_PROTOCOL` or `CODEX_REQUEST_FAILED`.
+
+## Windows background helpers
+
+Test `.\run.ps1` first. `install-startup-task.bat` creates a per-user Startup shortcut and starts the hidden runner immediately, without elevation. The runner finds Node, enables rotated file logs and restarts stopped bridges after 30 seconds. A mutex prevents duplicate background runners for this checkout.
+
+Use `.\stop-bridge.ps1` to stop the tracked runner and its child tree. It checks that the saved PID belongs to this checkout's PowerShell runner before stopping anything; abrupt termination relies on MQTT's last will. `uninstall-startup-task.ps1` stops that runner and removes the Startup shortcut. Neither command stops an independently launched foreground instance. Old 0.1 runners did not record PIDs: stop those manually before upgrading.
+
+PowerShell syntax is checked locally, but Startup/COM, Windows ACLs, native CLI discovery and process-tree termination require a Windows smoke test before deployment.
+
+## Development and verification
+
+```sh
+npm ci --ignore-scripts
+npm run check
+npm test
+npm audit
+```
+
+The tests use dummy credentials, fake app-server responses and short-lived TLS broker fixtures bound only to `127.0.0.1`. OpenSSL with `req -addext` is required to generate temporary test certificates. Tests cover credential-file preservation, isolated child environment, protocol framing, timeouts, logging/rotation, payload filtering, TLS trust/hostname rejection, fragmented CONNACK, keepalive, last will, PUBACK loss, reconnect ordering and shutdown. They do not contact Home Assistant or OpenAI.
+
+CI runs checks, tests and dependency audit on Node 22/24. Recheck the pinned dependency and lockfile on updates; auditing cannot prove the absence of malicious behavior. Before actual deployment, verify authenticated usage polling, broker ACLs and rendered Home Assistant sensors with the target account/broker and review the applicable Windows checks.
+
+Example existing gauge:
 
 ```yaml
 type: gauge
@@ -187,113 +133,6 @@ entity: sensor.codex_5h_used
 name: Codex 5h
 min: 0
 max: 100
-severity:
-  green: 0
-  yellow: 70
-  red: 90
 ```
 
-Weekly usage gauge:
-
-```yaml
-type: gauge
-entity: sensor.codex_weekly_used
-name: Codex Weekly
-min: 0
-max: 100
-severity:
-  green: 0
-  yellow: 70
-  red: 90
-```
-
----
-
-## Repository contents
-
-```text
-.
-├── .env.example
-├── README.md
-├── package.json
-├── start.bat
-├── run.ps1
-├── run-service.ps1
-├── run-hidden.vbs
-├── install-startup-task.bat
-├── install-startup-task.ps1
-├── uninstall-startup-task.ps1
-├── docs/
-│   └── images/
-└── src/
-    ├── auth.js
-    ├── codexUsage.js
-    ├── config.js
-    ├── index.js
-    ├── mqttHa.js
-    └── simpleMqtt.js
-```
-
-### Main files
-
-- `src/index.js` — bridge entry point and polling loop.
-- `src/config.js` — environment/config loading.
-- `src/auth.js` — Codex authentication handling.
-- `src/codexUsage.js` — Codex usage request and normalization.
-- `src/mqttHa.js` — Home Assistant MQTT Discovery and state publishing.
-- `src/simpleMqtt.js` — minimal MQTT client implementation.
-- `start.bat`, `run.ps1`, `run-service.ps1`, `run-hidden.vbs` — Windows run helpers.
-- `install-startup-task.ps1` / `uninstall-startup-task.ps1` — Windows startup shortcut management.
-
----
-
-## Development / validation
-
-This project has no npm dependencies. To validate JavaScript syntax:
-
-```powershell
-npm run check
-```
-
-The check script runs `node --check` against the source files.
-
----
-
-## Troubleshooting
-
-### Sensors do not appear in Home Assistant
-
-- Confirm MQTT is enabled in Home Assistant.
-- Confirm your MQTT broker URL, username, and password in `.env`.
-- Check that Home Assistant MQTT Discovery is enabled.
-- Check the bridge logs for MQTT connection errors.
-
-### Usage values are not updating
-
-- Confirm Codex is logged in on the same machine running the bridge.
-- Confirm `CODEX_HOME` points to the correct Codex config/auth directory if you use a non-default location.
-- Run the bridge manually with `node src/index.js` to see foreground logs.
-
-### The Windows startup task does not run silently
-
-- Re-run `install-startup-task.bat` or `install-startup-task.ps1`.
-- Check `logs/bridge.log` in the repository directory.
-- Confirm Node.js is available, or that the Codex desktop app bundled Node.js runtime can be found by the helper scripts.
-
----
-
-## Security and privacy
-
-- Do not commit `.env`.
-- Do not share `CODEX_ACCESS_TOKEN` if you use it.
-- The bridge does not publish your Codex token or MQTT password to Home Assistant.
-- MQTT state payloads contain usage/limit information only, not authentication headers, refresh tokens, or raw credential objects.
-- If OpenAI changes the Codex backend endpoint or response shape, the bridge may need an update.
-
----
-
-## Notes and limitations
-
-This project uses the Codex backend usage endpoint used by Codex itself. It is not a separately documented public API.
-
-Because of that, endpoint paths, authentication behavior, or response formats may change without notice. If that happens, update the bridge before relying on it for automations or monitoring.
+![Home Assistant entities](docs/images/pic-2.png)

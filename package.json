@@ -1,15 +1,22 @@
 {
   "name": "codex-ha-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Publish Codex usage limits to Home Assistant over MQTT.",
   "type": "module",
   "private": true,
   "scripts": {
     "start": "node src/index.js",
-    "check": "node --check src/index.js && node --check src/config.js && node --check src/auth.js && node --check src/codexUsage.js && node --check src/mqttHa.js && node --check src/simpleMqtt.js"
+    "check": "node scripts/check.mjs",
+    "test": "node --test test/*.test.js",
+    "audit": "npm audit --omit=dev"
   },
-  "dependencies": {},
+  "dependencies": {
+    "mqtt": "5.16.1"
+  },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "mqtt-packet": "9.0.2"
   }
 }

@@ -17,7 +17,7 @@ if (-not (Test-Path ".env") -and (Test-Path ".env.example")) {
 
 $Candidates = @()
 
-$NodeCommand = Get-Command node -ErrorAction SilentlyContinue
+$NodeCommand = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
 if ($NodeCommand) {
   $Candidates += $NodeCommand.Source
 }
@@ -33,7 +33,7 @@ $NodePath = $Candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Objec
 
 if (-not $NodePath) {
   Write-Host "Node was not found."
-  Write-Host "Install the LTS version from https://nodejs.org, then run this file again."
+  Write-Host "Install Node.js 22 or a newer LTS version from https://nodejs.org, then run this file again."
   Read-Host "Press Enter to close"
   exit 1
 }

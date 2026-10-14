@@ -1,4 +1,5 @@
-import { SimpleMqttClient } from "./simpleMqtt.js";
+import mqtt from "mqtt";
+import { BridgeError } from "./errors.js";
 
 const SENSOR_DEFS = [
   ["primary_used_percent", "Codex 5h Used", "%", "mdi:timer-sand"],
@@ -18,9 +19,23 @@ const SENSOR_DEFS = [
 ];
 
 export function createMqttClient(config) {
-  return new SimpleMqttClient(config.url, {
-    username: config.username,
-    password: config.password,
+  return mqtt.connect(config.mqtt.url, {
+    clientId: `codex-ha-${config.device.id}`,
+    username: config.mqtt.username,
+    password: config.mqtt.password,
+    ca: config.mqtt.ca,
+    rejectUnauthorized: true,
+    keepalive: config.mqtt.keepalive,
+    connectTimeout: config.mqtt.timeoutMs,
+    reconnectPeriod: 0, // Bridge owns backoff; every attempt gets a fresh bounded client.
+    queueQoSZero: false,
+    clean: true,
+    resubscribe: false,
+    manualConnect: true,
+    log: () => {},
+    will: {
+      topic: `${config.mqtt.baseTopic}/availability`, payload: "offline", qos: 1, retain: true,
+    },
   });
 }
 
@@ -50,7 +65,8 @@ export async function publishDiscovery(client, config) {
       unique_id: `${config.device.id}_${key}`,
       state_topic: stateTopic(config),
       availability_topic: availabilityTopic(config),
-      value_template: `{{ value_json.${key} }}`,
+      value_template: `{{ value_json.${key} if value_json.${key} is not none else 'unknown' }}`,
+      expire_after: config.pollSeconds * 3,
       json_attributes_topic: stateTopic(config),
       device,
       icon,
@@ -58,24 +74,38 @@ export async function publishDiscovery(client, config) {
 
     if (unit) payload.unit_of_measurement = unit;
 
-    await publish(client, discoveryTopic(config, key), payload, true);
+    await publish(client, discoveryTopic(config, key), payload, config.mqtt.timeoutMs);
   }
 }
 
 export async function publishAvailability(client, config, status) {
-  await publish(client, availabilityTopic(config), status, true);
+  await publish(client, availabilityTopic(config), status, config.mqtt.timeoutMs);
 }
 
 export async function publishState(client, config, state) {
-  await publish(client, stateTopic(config), state, true);
+  await publish(client, stateTopic(config), state, config.mqtt.timeoutMs);
 }
 
-function publish(client, topic, payload, retain = false) {
+export function publish(client, topic, payload, timeoutMs) {
+  if (!client.connected || client.disconnecting) return Promise.reject(new BridgeError("MQTT_OFFLINE"));
   const body = typeof payload === "string" ? payload : JSON.stringify(payload);
   return new Promise((resolve, reject) => {
-    client.publish(topic, body, { qos: 0, retain }, (error) => {
-      if (error) reject(error);
+    let settled = false;
+    const finish = error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(new BridgeError("MQTT_FAILED"));
       else resolve();
-    });
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new BridgeError("MQTT_TIMEOUT"));
+      // Drop late queued publishes; reconnect must fetch a fresh snapshot.
+      client.end(true);
+    }, timeoutMs);
+    try { client.publish(topic, body, { qos: 1, retain: true }, finish); }
+    catch { finish(true); }
   });
 }

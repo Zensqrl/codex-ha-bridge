@@ -1,4 +1,6 @@
 $ErrorActionPreference = "Stop"
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+& (Join-Path $Root "stop-bridge.ps1")
 
 $StartupFolder = [Environment]::GetFolderPath("Startup")
 $ShortcutPath = Join-Path $StartupFolder "Codex Home Assistant MQTT Bridge.lnk"
